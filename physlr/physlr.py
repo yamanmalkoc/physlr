@@ -17,11 +17,32 @@ from collections import Counter
 
 import networkx as nx
 import tqdm
+import numpy as np
 
 from physlr.minimerize import minimerize
 from physlr.read_fasta import read_fasta
+from sklearn.metrics.pairwise import cosine_similarity
 
 t0 = timeit.default_timer()
+
+
+###{ Temporal:
+stats_size = 1000000
+neighbor_stats = stats_size*[None]
+neighbor_stats_multicomp = stats_size * [None]
+all_similarity = np.zeros(201)
+class stat_tuple(object): #define a new? use this: stat_tuple(nodesCount, edgesCount)
+    def __init__(self, *arg_list):
+        for (name, arg) in zip('nodes edges'.split(), arg_list):
+            setattr(self, name, arg)
+
+    def __str__(self):
+        return "%s\t%s" % (self.nodes, self.edges)
+
+    def __repr__(self):
+        return "%s\t%s" % (self.nodes, self.edges)
+###} Temporal end
+
 
 def quantile(quantiles, xs):
     "Return the specified quantiles p of xs."
@@ -45,6 +66,59 @@ class Physlr:
     """
     Physlr: Physical Mapping of Linked Reads
     """
+
+    def neighbor_stat(self):
+        "Write stat for neighborhood"
+        g = self.read_graph(self.args.FILES)
+        Physlr.filter_edges(g, self.args.n)
+        print(
+            int(timeit.default_timer() - t0),
+            "Collecting neighboring graph stats.", file=sys.stderr)
+        print(
+            int(timeit.default_timer() - t0),
+            len(g), file=sys.stderr)
+        ### Collect stats
+        for u in progress(g):
+            sub_graph = g.subgraph(g.neighbors(u))  # Subgraph to check
+            nodes_count = len(sub_graph)
+            edges_count = sub_graph.number_of_edges()
+            if edges_count == 0 or nodes_count == 0:
+                continue
+            ## raw # components stat
+            #components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+            #if len(components) == 1:
+            #   neighbor_stats.append(stat_tuple(nodes_count, edges_count))
+            #if len(components) > 1:
+            #   neighbor_stats_multicomp.append(stat_tuple(nodes_count, edges_count))
+
+            #### adjacency mat stats
+            adj = nx.adjacency_matrix(sub_graph)
+            s = cosine_similarity(adj.dot(adj))
+            # all_similarity.append((s * 100).round(decimals=0).astype(np.int32))
+            s2 = (s * 100).round(decimals=0).astype(np.int32)
+            for x in np.nditer(s2):
+                if x < 200:
+                    all_similarity[x] = all_similarity[x] + 1
+                else:
+                    print(
+                        int(timeit.default_timer() - t0),
+                        "similarity overflow has happened and been ignored!", file=sys.stderr)
+            ## cosine similarity based filtering # of components stat
+            #not coded yet
+        ### Print stat
+        #### adjacency mat stats
+        for i in range(len(all_similarity)):
+            print(all_similarity[i], file=sys.stdout)
+            #print("\n", end="", file=sys.stdout)
+        #### raw # of components stat
+        #for i in range(len(neighbor_stats)):
+        #    if neighbor_stats[i] is not None:
+        #        print("0\t", end="", file=sys.stdout)
+        #        print(neighbor_stats[i], file=sys.stdout)
+        #for i in range(len(neighbor_stats_multicomp)):
+        #    if neighbor_stats_multicomp[i] is not None:
+        #        print("1\t", end="", file=sys.stdout)
+        #        print(neighbor_stats_multicomp[i], file=sys.stdout)
 
     @staticmethod
     def print_graph_stats(g, fout=sys.stderr):
