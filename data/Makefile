@@ -398,6 +398,10 @@ $(lr).n100-2000.physlr.overlap.n$n.split.fq.gz: $(lr).fq.gz $(lr).n100-2000.phys
 %.mol.tsv: %.tsv
 	$(python) $(bin)/physlr molecules -t$t $< >$@
 
+# Write stats of all subgraphs (1st order neighbour subgraphing) into file.
+%.neighbor.stat.tsv: %.tsv
+	$(python) bin/physlr neighbor-stat $< >$@
+
 # Convert a graph from TSV to GraphViz.
 # Filter out small components.
 %.gv: %.tsv
