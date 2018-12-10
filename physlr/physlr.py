@@ -67,6 +67,7 @@ class Physlr:
     Physlr: Physical Mapping of Linked Reads
     """
 
+    ###{ Temporal:
     def neighbor_stat(self):
         "Write stat for neighborhood"
         g = self.read_graph(self.args.FILES)
@@ -119,6 +120,7 @@ class Physlr:
         #    if neighbor_stats_multicomp[i] is not None:
         #        print("1\t", end="", file=sys.stdout)
         #        print(neighbor_stats_multicomp[i], file=sys.stdout)
+    ###} Temporal end
 
     @staticmethod
     def print_graph_stats(g, fout=sys.stderr):
