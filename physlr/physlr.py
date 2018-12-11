@@ -959,9 +959,11 @@ class Physlr:
             return u, {v: i for i, vs in enumerate(components) for v in vs}
         adj = nx.adjacency_matrix(sub_graph)
         cos = cosine_similarity(adj.dot(adj))
-        new_adj = np.multiply((cos > 0.92), adj.toarray())
+        new_adj = np.multiply((cos > 0.88), adj.toarray())
         edges_to_remove = np.argwhere(new_adj != adj.toarray())
+        sub_graph = nx.Graph(sub_graph)
         sub_graph.remove_edges_from(edges_to_remove)
+        sub_graph = nx.freeze(sub_graph)
         components2 = list(nx.connected_components(sub_graph))
         components2.sort(key=len, reverse=True)
         #len_comps = [len(i) for i in components2]
