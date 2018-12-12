@@ -27,6 +27,7 @@ t0 = timeit.default_timer()
 
 
 ###{ Temporal:
+#numberOfMols = 0
 stats_size = 1000000
 neighbor_stats = stats_size*[None]
 neighbor_stats_multicomp = stats_size * [None]
@@ -952,6 +953,12 @@ class Physlr:
         cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
         components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
         components.sort(key=len, reverse=True)
+        #global numberOfMols
+        if False:
+            len_comps = [len(i) for i in components]
+            #if len([i for i in len_comps if i > 1]) > 1:
+            #numberOfMols = numberOfMols + len([i for i in len_comps if i == 1])
+            return u, {v: i for i, vs in enumerate(components) for v in vs}
         sub_graph = g.subgraph(g.neighbors(u))  # Subgraph to check
         nodes_count = len(sub_graph)
         edges_count = sub_graph.number_of_edges()
@@ -959,7 +966,7 @@ class Physlr:
             return u, {v: i for i, vs in enumerate(components) for v in vs}
         adj = nx.adjacency_matrix(sub_graph)
         cos = cosine_similarity(adj.dot(adj))
-        new_adj = np.multiply((cos > 0.88), adj.toarray())
+        new_adj = np.multiply((cos > 0.85), adj.toarray())
         edges_to_remove = np.argwhere(new_adj != adj.toarray())
         sub_graph = nx.Graph(sub_graph)
         sub_graph.remove_edges_from(edges_to_remove)
@@ -967,14 +974,15 @@ class Physlr:
         components2 = list(nx.connected_components(sub_graph))
         components2.sort(key=len, reverse=True)
         #len_comps = [len(i) for i in components2]
+        #if len([i for i in len_comps if i > 1]) > 1:
+        #numberOfMols = numberOfMols + len([i for i in len_comps if i == 1])
+
         #multi_node_components = [i for i in components2 if len(i) > 1]
         #single_node_components = [i for i in components2 if len(i) == 1]
         #if len(components2) == 1:
         #    neighbor_stats.append(stat_tuple(nodes_count, edges_count))
         #if len(components2) > 1:
         #    neighbor_stats_multicomp.append(stat_tuple(nodes_count, edges_count))
-        if False:
-            return u, {v: i for i, vs in enumerate(components) for v in vs}
         return u, {v: i for i, vs in enumerate(components2) for v in vs}
 
     @staticmethod
@@ -1027,7 +1035,7 @@ class Physlr:
             u_molecule = molecules[u][v]
             v_molecule = molecules[v][u]
             gout.add_edge(f"{u}_{u_molecule}", f"{v}_{v_molecule}", n=prop["n"])
-        print(int(timeit.default_timer() - t0), "Separated molecules", file=sys.stderr)
+        print(int(timeit.default_timer() - t0), "Separated molecules : ", file=sys.stderr)
 
         self.write_graph(gout, sys.stdout, self.args.graph_format)
         print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
