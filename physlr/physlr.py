@@ -1035,7 +1035,7 @@ class Physlr:
             u_molecule = molecules[u][v]
             v_molecule = molecules[v][u]
             gout.add_edge(f"{u}_{u_molecule}", f"{v}_{v_molecule}", n=prop["n"])
-        print(int(timeit.default_timer() - t0), "Separated molecules : ", file=sys.stderr)
+        print(int(timeit.default_timer() - t0), "Separated molecules", file=sys.stderr)
 
         self.write_graph(gout, sys.stdout, self.args.graph_format)
         print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
