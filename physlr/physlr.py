@@ -69,7 +69,7 @@ class Physlr:
     """
 
     ###{ Temporal:
-    def neighbor_stat(self):
+    def physlr_neighbor_stat(self):
         "Write stat for neighborhood"
         g = self.read_graph(self.args.FILES)
         Physlr.filter_edges(g, self.args.n)
@@ -552,6 +552,7 @@ class Physlr:
         "Extract a vertex-induced subgraph."
         if self.args.d not in (0, 1):
             exit("physlr subgraph: error: Only -d0 and -d1 are currently supported.")
+        #self.args.v = "TTTGTCATCGCTTAGA"
         vertices = set(self.args.v.split())
         exclude_vertices = set(self.args.exclude_vertices.split())
         g = self.read_graph(self.args.FILES)
@@ -959,8 +960,8 @@ class Physlr:
         nodes_count = len(sub_graph)
         edges_count = sub_graph.number_of_edges()
         if edges_count == 0 or nodes_count == 0:
-            components_orig = list(nx.connected_components(g.subgraph(set([g.neighbors(u), u]))))
-            return u, {v: i for i, vs in enumerate(components_orig) for v in vs}
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
+            return u, {v: i for i, vs in enumerate(components) for v in vs if v!=u}
         if True:
             return u, {v: i for i, vs in enumerate(components) for v in vs}
             #len_comps = [len(i) for i in components]
