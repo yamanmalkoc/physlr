@@ -400,7 +400,11 @@ $(lr).n100-2000.physlr.overlap.n$n.split.fq.gz: $(lr).fq.gz $(lr).n100-2000.phys
 
 # Write stats of all subgraphs (1st order neighbour subgraphing) into file.
 %.neighbor.stat.tsv: %.tsv
-	$(python) bin/physlr neighbor-stat $< >$@
+	$(python) $(bin)/physlr neighbor-stat $< >$@
+
+# make a vertice-induced subgraph
+%.subgraph.tsv: %.tsv
+	$(python) $(bin)/physlr subgraph -v$v -d$d $< >$@
 
 # Convert a graph from TSV to GraphViz.
 # Filter out small components.

@@ -552,16 +552,18 @@ class Physlr:
         "Extract a vertex-induced subgraph."
         if self.args.d not in (0, 1):
             exit("physlr subgraph: error: Only -d0 and -d1 are currently supported.")
-        #self.args.v = "TTTGTCATCGCTTAGA"
         vertices = set(self.args.v.split())
         exclude_vertices = set(self.args.exclude_vertices.split())
         g = self.read_graph(self.args.FILES)
         if self.args.d == 1:
             vertices.update(v for u in vertices for v in g.neighbors(u))
         subgraph = g.subgraph(vertices - exclude_vertices)
-        print(int(timeit.default_timer() - t0), "Extracted subgraph", file=sys.stderr)
-        self.write_graph(subgraph, sys.stdout, self.args.graph_format)
-        print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
+        if len(subgraph)==0:
+            print(int(timeit.default_timer() - t0), "No subgraph with input barcode(s)", file=sys.stderr)
+        else:
+            print(int(timeit.default_timer() - t0), "Extracted subgraph", file=sys.stderr)
+            self.write_graph(subgraph, sys.stdout, self.args.graph_format)
+            print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
 
     def physlr_indexfa(self):
         "Index a set of sequences. The output file format is TSV."
