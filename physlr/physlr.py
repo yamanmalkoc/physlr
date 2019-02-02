@@ -18,13 +18,16 @@ from collections import Counter
 import networkx as nx
 import tqdm
 import numpy as np
+#from scipy.linalg import get_blas_funcs
 
 from physlr.minimerize import minimerize
 from physlr.read_fasta import read_fasta
 from sklearn.metrics.pairwise import cosine_similarity
 
-t0 = timeit.default_timer()
+#gemm = get_blas_funcs("gemm", [X, Y])
 
+t0 = timeit.default_timer()
+egRem_threshold=0.80
 
 ###{ Temporal:
 #numberOfMols = 0
@@ -952,37 +955,51 @@ class Physlr:
 
     @staticmethod
     def determine_molecules(g, u):
+        if False:
+            "Assign the neighbours of this vertex to molecules."
+            cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
+            return u, {v: i for i, vs in enumerate(components) for v in vs}
         "Assign the neighbours of this vertex to molecules."
-        cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
-
-        components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
-        components.sort(key=len, reverse=True)
-        #global numberOfMols
-        sub_graph = g.subgraph(g.neighbors(u))  # Subgraph to check
+        sub_graph = g.subgraph(g.neighbors(u))
         nodes_count = len(sub_graph)
         edges_count = sub_graph.number_of_edges()
         if edges_count == 0 or nodes_count == 0:
+            cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
-            return u, {v: i for i, vs in enumerate(components) for v in vs if v!=u}
-        if True:
+            return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
+            #global numberOfMols
+            #sub_graph = g.subgraph(g.neighbors(u))  # Subgraph to check
+            #nodes_count = len(sub_graph)
+            #edges_count = sub_graph.number_of_edges()
+            #if edges_count == 0 or nodes_count == 0:
+        if False:
+            cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
             return u, {v: i for i, vs in enumerate(components) for v in vs}
             #len_comps = [len(i) for i in components]
             #if len([i for i in len_comps if i > 1]) > 1:
             #numberOfMols = numberOfMols + len([i for i in len_comps if i == 1])
         adj = nx.adjacency_matrix(sub_graph)
-        cos = cosine_similarity(adj.dot(adj))
-        new_adj = np.multiply((cos > 0.88), adj.toarray())
+        #cos = cosine_similarity(adj.dot(adj))
+        cos = cosine_similarity(adj)
+        #cos = cosine_similarity(np.matmul(adj, adj))
+        new_adj = np.multiply((cos > egRem_threshold), adj.toarray())
         edges_to_remove = np.argwhere(new_adj != adj.toarray())
         sub_graph = nx.Graph(sub_graph)
         sub_graph.remove_edges_from(edges_to_remove)
         sub_graph = nx.freeze(sub_graph)
         components2 = list(nx.connected_components(sub_graph))
         components2.sort(key=len, reverse=True)
+        multi_node_components = [i for i in components2 if len(i) > 1]
         #len_comps = [len(i) for i in components2]
         #if len([i for i in len_comps if i > 1]) > 1:
         #numberOfMols = numberOfMols + len([i for i in len_comps if i == 1])
-
-        multi_node_components = [i for i in components2 if len(i) > 1]
         #single_node_components = [i for i in components2 if len(i) == 1]
         #if len(components2) == 1:
         #    neighbor_stats.append(stat_tuple(nodes_count, edges_count))
@@ -1004,8 +1021,7 @@ class Physlr:
         Physlr.filter_edges(gin, self.args.n)
         print(
             int(timeit.default_timer() - t0),
-            "Separating barcodes into molecules", file=sys.stderr)
-
+            "Separating barcodes into molecules with theshold: ", egRem_threshold, file=sys.stderr)
         # Parition the neighbouring vertices of each barcode into molecules.
         if self.args.threads == 1:
             molecules = dict(self.determine_molecules(gin, u) for u in progress(gin))
