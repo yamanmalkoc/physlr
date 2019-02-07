@@ -6,6 +6,7 @@ Physlr: Physical Mapping of Linked Reads
 import argparse
 import itertools
 import multiprocessing
+import threading
 import os
 import random
 import re
@@ -29,6 +30,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 t0 = timeit.default_timer()
 egRem_threshold=0.88
+globalNum=0
+l = multiprocessing.Lock()
 
 ###{ Temporal:
 #numberOfMols = 0
@@ -956,6 +959,7 @@ class Physlr:
 
     @staticmethod
     def determine_molecules(g, u):
+        global globalNum
         "Assign the neighbours of this vertex to molecules."
         strategy = 3 #1:current, 2:current modified, 3:sqCos
         if strategy == 1: #Physlr's current version (gitMaster)
@@ -968,17 +972,14 @@ class Physlr:
             nodes_count = len(sub_graph)
             edges_count = sub_graph.number_of_edges()
             if edges_count == 0 or nodes_count == 0:
-                # cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
-                # components = ... +sort (2lines removed here)
                 components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
                 return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
             cut_vertices = set(nx.articulation_points(sub_graph))
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
             components.sort(key=len, reverse=True)
-            return u, {v: i for i, vs in enumerate(components) for v in vs}
-            # len_comps = [len(i) for i in components]
-            # if len([i for i in len_comps if i > 1]) > 1:
-            # numberOfMols = numberOfMols + len([i for i in len_comps if i == 1])
+            #return u, {v: i for i, vs in enumerate(components) for v in vs}
+            multi_node_components = [i for i in components if len(i) > 1]
+            return u, {v: i for i, vs in enumerate(multi_node_components) for v in vs}
         if strategy == 3:
             sub_graph = g.subgraph(g.neighbors(u))
             nodes_count = len(sub_graph)
@@ -986,16 +987,30 @@ class Physlr:
             if edges_count == 0 or nodes_count == 0:
                 components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
                 return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
+            # [ tempo start
+            cut_vertices = set(nx.articulation_points(sub_graph))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
+            multi_node_components_temp = [i for i in components if len(i) > 1]
+            # tempo end ]
             adj_array = nx.adjacency_matrix(sub_graph).toarray()
-            edges_to_remove = np.argwhere(
-                cosine_similarity(np.dot(adj_array, adj_array)) <= egRem_threshold)
-            sub_graph = nx.Graph(sub_graph)
-            sub_graph.remove_edges_from(edges_to_remove)
-            sub_graph = nx.freeze(sub_graph)
-            cos_components = list(nx.connected_components(sub_graph))
+            #adj = nx.adjacency_matrix(sub_graph)
+            #edges_to_remove = np.argwhere(
+            #    cosine_similarity(np.dot(adj, adj)) <= egRem_threshold)
+            sq_cos = cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array))
+            edges_to_remove = np.argwhere(sq_cos < egRem_threshold)
+            sub_graph2 = nx.Graph(sub_graph)
+            sub_graph2.remove_edges_from(edges_to_remove)
+            #sub_graph2 = nx.freeze(sub_graph2)
+            cos_components = list(nx.connected_components(sub_graph2))
             cos_components.sort(key=len, reverse=True)
             multi_node_components = [i for i in cos_components if len(i) > 1]
+            if len(multi_node_components_temp) == len(multi_node_components):
+                l.acquire()
+                globalNum+=1
+                l.release()
             return u, {v: i for i, vs in enumerate(multi_node_components) for v in vs}
+            #if strategy == 4:
             # adj = nx.adjacency_matrix(sub_graph)
             # cos = cosine_similarity(adj.dot(adj))
             # cos = cosine_similarity(adj)
@@ -1004,7 +1019,7 @@ class Physlr:
             # edges_to_remove = np.argwhere(new_adj != adj.toarray())
             # cos = cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array))
             # edges_to_remove = np.argwhere(cos <= egRem_threshold)
-            #edges_to_remove = np.argwhere(cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array)) <= egRem_threshold)
+            # edges_to_remove = np.argwhere(cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array)) <= egRem_threshold)
             # len_comps = [len(i) for i in components2]
             # if len([i for i in len_comps if i > 1]) > 1:
             # numberOfMols = numberOfMols + len([i for i in len_comps if i == 1])
@@ -1039,6 +1054,7 @@ class Physlr:
                     self.determine_molecules_process, progress(gin), chunksize=100))
             Physlr.graph = None
         print(int(timeit.default_timer() - t0), "Identified molecules", file=sys.stderr)
+        print(int(timeit.default_timer() - t0), "no edge removal in",globalNum,"cases", file=sys.stderr)
 
         # Add vertices.
         gout = nx.Graph()
