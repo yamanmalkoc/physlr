@@ -1010,7 +1010,34 @@ class Physlr:
                 globalNum+=1
                 l.release()
             return u, {v: i for i, vs in enumerate(multi_node_components) for v in vs}
-            #if strategy == 4:
+        if strategy == 4:
+            sub_graph = g.subgraph(g.neighbors(u))
+            nodes_count = len(sub_graph)
+            edges_count = sub_graph.number_of_edges()
+            if edges_count == 0 or nodes_count == 0:
+                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
+                return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
+            # [ current
+            cut_vertices = set(nx.articulation_points(sub_graph))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
+            multicomp = [i for i in components if len(i) > 1]
+            # current end ]
+            comul_multisubcomps = []
+            for sc in multicomp:
+                subcomp = sub_graph.subgraph(set(sc))
+                print(nx.adjacency_matrix(subcomp).toarray())
+                adj_array = nx.adjacency_matrix(subcomp).toarray()
+                sq_cos = cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array))
+                edges_to_remove = np.argwhere(sq_cos < egRem_threshold)
+                subcomp2 = nx.Graph(subcomp)
+                subcomp2.remove_edges_from(edges_to_remove)
+                subcomp2 = nx.freeze(subcomp2)
+                cos_components = list(nx.connected_components(subcomp2))
+                cos_components.sort(key=len, reverse=True)
+                multisubcomp = [i for i in cos_components if len(i) > 1]
+                comul_multisubcomps = comul_multisubcomps + multisubcomp
+            return u, {v: i for i, vs in enumerate(comul_multisubcomps) for v in vs}
             # adj = nx.adjacency_matrix(sub_graph)
             # cos = cosine_similarity(adj.dot(adj))
             # cos = cosine_similarity(adj)
