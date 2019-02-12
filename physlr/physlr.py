@@ -964,38 +964,17 @@ class Physlr:
         # if "TCGGGCAAGAGCACCA" not in u:
         #    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
         #    return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
-        strategy = 3  # 1:current, 2:current modified, 3:sqCos
+        strategy = 2  # 1:current, 2:current modified, 3:sqCos
         if strategy == 1:  # Physlr's current version (gitMaster)
-            sub_graph = g.subgraph(g.neighbors(u))
-            nodes_count = len(sub_graph)
-            # edges_count = sub_graph.number_of_edges()
-            if nodes_count == 0:  # or edges_count == 0:
-                # components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
-                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
-                return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
             cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
             components.sort(key=len, reverse=True)
-            multi_node_components = [i for i in components if len(i) > 1]
-            #print(
-            #    int(timeit.default_timer() - t0),
-            #    "working", "with the one","with # comps equal to:", multi_node_components.__len__(),
-            #    "with comps equal to:", multi_node_components,
-            #    file=sys.stderr)
-            return u, {v: i for i, vs in enumerate(multi_node_components) for v in vs}
+            return u, {v: i for i, vs in enumerate(components) for v in vs}
         if strategy == 2:  # Physlr's modified current version ! (gitModif)
-            sub_graph = g.subgraph(g.neighbors(u))
-            nodes_count = len(sub_graph)
-            edges_count = sub_graph.number_of_edges()
-            if edges_count == 0 or nodes_count == 0:
-                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
-                return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
-            cut_vertices = set(nx.articulation_points(sub_graph))
+            cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
             components.sort(key=len, reverse=True)
-            # return u, {v: i for i, vs in enumerate(components) for v in vs}
-            multi_node_components = [i for i in components if len(i) > 1]
-            return u, {v: i for i, vs in enumerate(multi_node_components) for v in vs}
+            return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
         if strategy == 3:
             sub_graph = g.subgraph(g.neighbors(u))
             nodes_count = len(sub_graph)
