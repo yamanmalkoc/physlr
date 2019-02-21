@@ -21,6 +21,7 @@ import tqdm
 import numpy as np
 import scipy as sp
 import pandas as pd
+import random as rd
 #from scipy.linalg import get_blas_funcs
 
 from physlr.minimerize import minimerize
@@ -1174,7 +1175,27 @@ class Physlr:
                 components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
                 components.sort(key=len, reverse=True)
                 return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
-            parts=math.sqrt(nodes_count)
+            num_parts = int(math.sqrt(nodes_count))
+            ys = list(sub_graph.nodes)
+            rd.shuffle(ys)
+            ylen = len(ys)
+            # size = ylen // num_parts
+            # leftover = ylen - size * num_parts
+            size, leftover = divmod(ylen, num_parts)
+            chunks = [ys[0 + size * i: size * (i + 1)] for i in list(range(num_parts))]
+            edge = size * num_parts
+            for i in list(range(leftover)):
+                chunks[i % num_parts].append(ys[edge + i])
+            chunks_sets = [set() for _ in range(len(chunks))]
+            for i, c in zip(range(len(chunks)), chunks):
+                chunks_sets[i].update(set(c))
+            for i in range(chunks_sets):
+                mini_subgraph = g.subgraph(chunks_sets[i])
+                cut_vertices = set(nx.articulation_points(g.subgraph(chunks_sets[i])))
+                components = list(nx.connected_components(g.subgraph(chunks_sets[i] - cut_vertices)))
+                components.sort(key=len, reverse=True)
+                return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+            ############## HERE WE ARE CHANGING THE CODE
 
             # [ current
             cut_vertices = set(nx.articulation_points(sub_graph))
