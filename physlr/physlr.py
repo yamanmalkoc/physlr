@@ -221,6 +221,14 @@ class Physlr:
             exit(1)
 
     @staticmethod
+    def write_subgraphs_stats(g, fout):
+        "Write statistics of the subgraphs."
+        print("Barcode\t\tnodes\tedges\talpha(2e/(n(n-1))", file=fout)
+        for i in progress(g):
+            print(i, g[i][0], g[i][1], g[i][2], sep="\t", file=fout)
+
+
+    @staticmethod
     def read_tsv(g, filename):
         "Read a graph in TSV format."
         with open(filename) as fin:
@@ -1010,7 +1018,7 @@ class Physlr:
         # if "AAACACCCAACTGCTA" not in u:
         #    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
         #    return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
-        strategy = 3  # 1:current, 2:current modified, 3:sqCos
+        strategy = 5  # 1:current, 2:current modified, 3:sqCos
         if strategy == 1:  # Physlr's current version (gitMaster)
             cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
@@ -1102,10 +1110,8 @@ class Physlr:
             # adj_array = nx.adjacency_matrix(sub_graph).toarray()
             # edges_to_remove = np.argwhere(cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array)) < threshold)
             # adj_array = nx.adjacency_matrix(sub_graph).toarray()
-
             # edges_to_keep = np.argwhere(
             #    cosine_similarity(sp.linalg.blas.sgemm(1.0, adj_array, adj_array)) >= threshold)
-
             # removed = np.argwhere(nx.adjacency_matrix(sub_graph2).toarray() != adj_array)
             # removed = np.argwhere(nx.adjacency_matrix(sub_graph2).toarray() != adj.toarray())
             # multi_node_components = [i for i in cos_components if len(i) > 1]
@@ -1163,44 +1169,48 @@ class Physlr:
                 # cos_components.sort(key=len, reverse=True)
                 # removed = np.argwhere(nx.adjacency_matrix(sub_graph2).toarray() != adj_array)
         if strategy == 5:
-            sub_graph = g.subgraph(g.neighbors(u))
-            nodes_count = len(sub_graph)
-            # edges_count = sub_graph.number_of_edges()
-            if nodes_count == 0:  # or edges_count == 0:
-                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
-                # components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
-                return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
-            if nodes_count < 100:
-                cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
-                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
-                components.sort(key=len, reverse=True)
-                return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
-            num_parts = int(math.sqrt(nodes_count))
-            ys = list(sub_graph.nodes)
-            rd.shuffle(ys)
-            ylen = len(ys)
-            # size = ylen // num_parts
-            # leftover = ylen - size * num_parts
-            size, leftover = divmod(ylen, num_parts)
-            chunks = [ys[0 + size * i: size * (i + 1)] for i in list(range(num_parts))]
-            edge = size * num_parts
-            for i in list(range(leftover)):
-                chunks[i % num_parts].append(ys[edge + i])
-            chunks_sets = [set() for _ in range(len(chunks))]
-            for i, c in zip(range(len(chunks)), chunks):
-                chunks_sets[i].update(set(c))
-            for i in range(chunks_sets):
-                mini_subgraph = g.subgraph(chunks_sets[i])
-                cut_vertices = set(nx.articulation_points(g.subgraph(chunks_sets[i])))
-                components = list(nx.connected_components(g.subgraph(chunks_sets[i] - cut_vertices)))
-                components.sort(key=len, reverse=True)
-                return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
-            ############## HERE WE ARE CHANGING THE CODE
-
+            strategy5 = 1
+            if strategy5 == 1:
+                sub_graph = g.subgraph(g.neighbors(u))
+                nodes_count = len(sub_graph)
+                # edges_count = sub_graph.number_of_edges()
+                if nodes_count == 0:  # or edges_count == 0:
+                    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
+                    # components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+                    return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
+                if nodes_count < 100:
+                    cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+                    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+                    components.sort(key=len, reverse=True)
+                    return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+                num_parts = int(math.sqrt(nodes_count))
+                num_parts = 5
+                ys = list(sub_graph.nodes)
+                rd.shuffle(ys)
+                ylen = len(ys)
+                # size = ylen // num_parts
+                # leftover = ylen - size * num_parts
+                size, leftover = divmod(ylen, num_parts)
+                chunks = [ys[0 + size * i: size * (i + 1)] for i in list(range(num_parts))]
+                edge = size * num_parts
+                for i in list(range(leftover)):
+                    chunks[i % num_parts].append(ys[edge + i])
+                chunks_sets = [set() for _ in range(len(chunks))]
+                for i, c in zip(range(len(chunks)), chunks):
+                    chunks_sets[i].update(set(c))
+                cut_vertices = set(nx.articulation_points(g.subgraph(chunks_sets[0])))
+                max_component = list(nx.connected_components(g.subgraph(chunks_sets[0] - cut_vertices)))
+                max = len(max_component)
+                for i in range(1,len(chunks_sets)):
+                    cut_vertices = set(nx.articulation_points(g.subgraph(chunks_sets[i])))
+                    components = list(nx.connected_components(g.subgraph(chunks_sets[i] - cut_vertices)))
+                    components.sort(key=len, reverse=True)
+                    if len(components) > max:
+                        max = len(components)
+                        max_component = components
+                max_component.sort(key=len, reverse=True)
+                return u, {v: i for i, vs in enumerate(max_component) if len(vs) > 1 for v in vs}
             # [ current
-            cut_vertices = set(nx.articulation_points(sub_graph))
-            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
-            components.sort(key=len, reverse=True)
             # adj = nx.adjacency_matrix(sub_graph)
             # cos = cosine_similarity(adj.dot(adj))
             # cos = cosine_similarity(adj)
@@ -1279,6 +1289,45 @@ class Physlr:
 
         self.write_graph(gout, sys.stdout, self.args.graph_format)
         print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
+
+    @staticmethod
+    def subgraph_stats(g, u):
+        "Extract the statistics of the vertex-induced subgraph with the vertex being u."
+        sub_graph = g.subgraph(g.neighbors(u))
+        nodes_count = len(sub_graph)
+        edges_count = sub_graph.number_of_edges()
+        # return u, {v: i for i, vs in enumerate(components) for v in vs}
+        if nodes_count < 2:
+            return u, [nodes_count, edges_count, 0.0]
+        return u, [nodes_count, edges_count, edges_count*2.0/(nodes_count*(nodes_count-1))]
+
+    @staticmethod
+    def subgraph_stats_process(u):
+        """
+        Extract the statistics of the subgraph of neighbours of this vertex.
+        The graph is passed in the class variable Physlr.graph.
+        """
+        return Physlr.subgraph_stats(Physlr.graph, u)
+
+    def physlr_subgraphs_stats(self):
+        "Retrieve subgraphs' stats."
+        gin = self.read_graph(self.args.FILES)
+        Physlr.filter_edges(gin, self.args.n)
+        print(
+            int(timeit.default_timer() - t0),
+            "Retrieving statistics of the subgraphs...", file=sys.stderr)
+        if self.args.threads == 1:
+            stats = dict(self.subgraph_stats(gin, u) for u in progress(gin))
+        else:
+            Physlr.graph = gin
+            with multiprocessing.Pool(self.args.threads) as pool:
+                stats = dict(pool.map(
+                    self.subgraph_stats_process, progress(gin), chunksize=100))
+            Physlr.graph = None
+        print(int(timeit.default_timer() - t0), "Extracted subgraphs' statistics", file=sys.stderr)
+        self.write_subgraphs_stats(stats, sys.stdout)
+        print(int(timeit.default_timer() - t0), "Wrote statistics", file=sys.stderr)
+
 
     @staticmethod
     def index_markers_in_backbones(backbones, bxtomin):
