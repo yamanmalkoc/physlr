@@ -14,6 +14,7 @@ import statistics
 import sys
 import timeit
 from collections import Counter
+import community
 from itertools import repeat
 
 import networkx as nx
@@ -1015,10 +1016,11 @@ class Physlr:
         #       - strategy2 3:      sqCos with: blas.sgemm / dict /
         #    - strategy 4:
         #    - strategy 5: Blind splitting
+        #    - strategy 6: Louvian
         # if "AAACACCCAACTGCTA" not in u:
         #    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
         #    return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
-        strategy = 5  # 1:current, 2:current modified, 3:sqCos
+        strategy = 2  # 1:current, 2:current modified, 3:sqCos
         if strategy == 1:  # Physlr's current version (gitMaster)
             cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
@@ -1201,7 +1203,7 @@ class Physlr:
                 cut_vertices = set(nx.articulation_points(g.subgraph(chunks_sets[0])))
                 max_component = list(nx.connected_components(g.subgraph(chunks_sets[0] - cut_vertices)))
                 max = len(max_component)
-                for i in range(1,len(chunks_sets)):
+                for i in range(1, len(chunks_sets)):
                     cut_vertices = set(nx.articulation_points(g.subgraph(chunks_sets[i])))
                     components = list(nx.connected_components(g.subgraph(chunks_sets[i] - cut_vertices)))
                     components.sort(key=len, reverse=True)
@@ -1210,6 +1212,26 @@ class Physlr:
                         max_component = components
                 max_component.sort(key=len, reverse=True)
                 return u, {v: i for i, vs in enumerate(max_component) if len(vs) > 1 for v in vs}
+
+        if strategy == 6:
+            sub_graph = g.subgraph(g.neighbors(u))
+            nodes_count = len(sub_graph)
+            if nodes_count == 0:  # or edges_count == 0:
+                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+                return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+            partition = community.best_partition(sub_graph)
+            if len(partition) == 0:
+                return u, {}
+            accu_multinode_partitions = {}
+            for com in set(partition.values()):
+                list_nodes = [nodes for nodes in partition.keys() if partition[nodes] == com]
+                if len(list_nodes) > 1:
+                    single_partition_multiple_nodes = {v: com for v in list_nodes}
+                    accu_multinode_partitions.update(single_partition_multiple_nodes)
+            if len(accu_multinode_partitions) == 0:
+                return u, {}
+            return u, accu_multinode_partitions
+
             # [ current
             # adj = nx.adjacency_matrix(sub_graph)
             # cos = cosine_similarity(adj.dot(adj))
