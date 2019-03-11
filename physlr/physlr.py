@@ -14,10 +14,11 @@ import statistics
 import sys
 import timeit
 from collections import Counter
-import community
+import community as louvian
 from itertools import repeat
 
 import networkx as nx
+from networkx.algorithms import community as nxcommunity
 import tqdm
 import numpy as np
 import scipy as sp
@@ -1020,7 +1021,7 @@ class Physlr:
         # if "AAACACCCAACTGCTA" not in u:
         #    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)).union(set([u])))))
         #    return u, {v: i for i, vs in enumerate(components) for v in vs if v != u}
-        strategy = 2  # 1:current, 2:current modified, 3:sqCos
+        strategy = 8  # 1:current, 2:current modified, 3:sqCos
         if strategy == 1:  # Physlr's current version (gitMaster)
             cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
             components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
@@ -1219,7 +1220,7 @@ class Physlr:
             if nodes_count == 0:  # or edges_count == 0:
                 components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
                 return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
-            partition = community.best_partition(sub_graph)
+            partition = louvian.best_partition(sub_graph)
             if len(partition) == 0:
                 return u, {}
             accu_multinode_partitions = {}
@@ -1231,6 +1232,35 @@ class Physlr:
             if len(accu_multinode_partitions) == 0:
                 return u, {}
             return u, accu_multinode_partitions
+
+        if strategy == 7:
+            sub_graph = g.subgraph(g.neighbors(u))
+            nodes_count = len(sub_graph)
+            edges_count = sub_graph.number_of_edges()
+            if nodes_count == 0 or edges_count == 0:
+                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+                return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+            communities = nxcommunity.greedy_modularity_communities(sub_graph)
+            return u, {v: i for i, vs in enumerate(communities) if len(list(vs)) > 1 for v in list(vs)}
+
+        if strategy == 8:
+            cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
+            communities = []
+            for comp in components:
+                if len(comp) > 1:
+                    #sub_graph_comp = g.subgraph(comp)
+                    communities = communities + nxcommunity.greedy_modularity_communities(g.subgraph(comp))
+            return u, {v: i for i, vs in enumerate(communities) if len(list(vs)) > 1 for v in list(vs)}
+            #sub_graph = g.subgraph(g.neighbors(u))
+            #nodes_count = len(sub_graph)
+            #edges_count = sub_graph.number_of_edges()
+            #if nodes_count == 0 or edges_count == 0:
+            #    components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+            #    return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+            #communities = nxcommunity.greedy_modularity_communities(sub_graph)
+            #return u, {v: i for i, vs in enumerate(communities) if len(list(vs)) > 1 for v in list(vs)}
 
             # [ current
             # adj = nx.adjacency_matrix(sub_graph)
@@ -1321,7 +1351,8 @@ class Physlr:
         # return u, {v: i for i, vs in enumerate(components) for v in vs}
         if nodes_count < 2:
             return u, [nodes_count, edges_count, 0.0]
-        return u, [nodes_count, edges_count, edges_count*2.0/(nodes_count*(nodes_count-1))]
+        #return u, [nodes_count, edges_count, edges_count * 2.0 / (nodes_count * (nodes_count - 1))]
+        return u, [nodes_count, edges_count, edges_count * 2.0 / (nodes_count * (nodes_count - 1)), nx.diameter(sub_graph)]
 
     @staticmethod
     def subgraph_stats_process(u):
