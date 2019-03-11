@@ -1253,6 +1253,28 @@ class Physlr:
                     #sub_graph_comp = g.subgraph(comp)
                     communities = communities + nxcommunity.greedy_modularity_communities(g.subgraph(comp))
             return u, {v: i for i, vs in enumerate(communities) if len(list(vs)) > 1 for v in list(vs)}
+
+        if strategy == 9:
+            sub_graph = g.subgraph(g.neighbors(u))
+            nodes_count = len(sub_graph)
+            edges_count = sub_graph.number_of_edges()
+            if nodes_count == 0 or edges_count == 0:
+                components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+                return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+            communities = list(nxcommunity.k_clique_communities(sub_graph, 3))
+            return u, {v: i for i, vs in enumerate(communities) if len(list(vs)) > 1 for v in list(vs)}
+
+        if strategy == 9.2:
+            cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+            components.sort(key=len, reverse=True)
+            communities = []
+            for comp in components:
+                if len(comp) > 1:
+                    # sub_graph_comp = g.subgraph(comp)
+                    communities = communities + list(nxcommunity.k_clique_communities(g.subgraph(comp), 3))
+            return u, {v: i for i, vs in enumerate(communities) if len(list(vs)) > 1 for v in list(vs)}
+
             #sub_graph = g.subgraph(g.neighbors(u))
             #nodes_count = len(sub_graph)
             #edges_count = sub_graph.number_of_edges()

@@ -7,6 +7,9 @@ w=32
 # Number of threads.
 t=16
 
+# Size of a k-mer.
+bst=85
+
 # Compress in parallel.
 gzip=pigz -p$t
 
@@ -15,7 +18,7 @@ bin=../bin
 
 # Python interpreter.
 #python=PYTHONPATH=.. pypy3
-python=PYTHONPATH=.. /home/aafshinfard/work/tools/pypy3.5-6.0.0-linux_x86_64-portable/bin/pypy3
+python=PYTHONPATH=.. /projects/btl/aafshinfard/virtuEnv/pypy3/bin/pypy3
 # Reference genome.
 ref=fly
 
@@ -396,15 +399,23 @@ $(lr).n100-2000.physlr.overlap.n$n.split.fq.gz: $(lr).fq.gz $(lr).n100-2000.phys
 
 # Separate barcodes into molecules.
 %.mol.tsv: %.tsv
-	$(python) $(bin)/physlr molecules -t$t $< >$@
+	$(python) $(bin)/physlr molecules --bst ${bst} -t$t $< >$@
 
 # Write stats of all subgraphs (1st order neighbour subgraphing) into file.
 %.neighbor.stat.tsv: %.tsv
 	$(python) $(bin)/physlr neighbor-stat $< >$@
 
-# make a vertice-induced subgraph
+# Make a vertex-induced subgraph
 %.subgraph.tsv: %.tsv
 	$(python) $(bin)/physlr subgraph -v$v -d$d $< >$@
+
+# Make multiple vertex-induced subgraphs
+%.subgraphs: %.tsv
+	$(python) $(bin)/physlr subgraphs -v$v -d$d -o $*.subgraphs $<
+
+# Extract statistics of the subgraphs
+%.subgraphs_stats: %.tsv
+	$(python) $(bin)/physlr subgraphs-stats -t$t $< >$@
 
 # Convert a graph from TSV to GraphViz.
 # Filter out small components.
