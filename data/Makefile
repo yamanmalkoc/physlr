@@ -146,7 +146,7 @@ fish: \
 	fish.n100-5000.c2-x.physlr.overlap.n$n.mol.backbone.map.fish.supernova.n10.sort.best.bed.path.quast.tsv
 
 # Assemble a physical map of fish using physlr-indexlr (native implementation).
-# ref=z11 lr=fish draft=fish.supernova indexlr=1 n=40
+# ref=z11 lr=fish draft=fish.supernova indexlr=1 n=40 min_component_size=200
 fish-indexlr: \
 	fish.indexlr.n100-5000.c2-x.physlr.overlap.n$n.mol.backbone.path.z11.molecule.bed.pdf \
 	fish.indexlr.n100-5000.c2-x.physlr.overlap.n$n.mol.backbone.label.gv.pdf \
@@ -498,6 +498,11 @@ endif
 %.overlap.n$n.mol.backbone.map-mkt.$(draft).n10.bed: %.overlap.n$n.mol.backbone.tsv %.tsv $(draft).physlr.tsv
 	$(time) $(python) $(bin)/physlr map-mkt -n10 $^ >$@
 
+# Annotate a graph with a BED file of mappings.
+# Filter out small components.
+%.map.$(draft).n10.sort.best.ann.gv: %.tsv %.map.$(draft).n10.sort.best.bed
+	$(python) $(bin)/physlr annotate-graph --min-component-size=$(min_component_size) -Ogv $^ >$@
+
 # Filter a BED file by score.
 %.n100.bed: %.n10.bed
 	awk '$$5 >= 100' $< >$@
@@ -541,6 +546,10 @@ endif
 # Make multiple vertex-induced subgraphs
 %.subgraphs: %.tsv
 	$(python) $(bin)/physlr subgraphs -v$v -d$d -o $*.subgraphs $<
+
+# Extract statistics of the subgraphs
+%.subgraphs-stats.tsv: %.tsv
+	$(python) $(bin)/physlr subgraphs-stats -t$t $< >$@
 
 # Convert a graph from TSV to GraphViz.
 # Filter out small components.
@@ -618,6 +627,10 @@ endif
 ################################################################################
 # GraphViz
 
+# Extract the largest component.
+%.comp1.gv: %.gv
+	ccomps -z -X'#0' $< >$@ || true
+
 # Label the edges with edge weight.
 %.label.gv: %.gv
 	gvpr -c 'E { label = n }' $< >$@
@@ -639,6 +652,12 @@ endif
 	gvpr 'E[n >= 50]' $< >$@
 
 # Layout and render an undirected graph to PDF.
+# Do not prevent overlapping vertices.
+%.gv.squish.pdf: %.gv
+	neato -Gsize=100,100 -Tpdf -o $@ $<
+
+# Layout and render an undirected graph to PDF.
+# Prevent overlapping vertices by scaling the layout.
 %.gv.pdf: %.gv
 	neato -Goverlap=scale -Gsize=100,100 -Tpdf -o $@ $<
 

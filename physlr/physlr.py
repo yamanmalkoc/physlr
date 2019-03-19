@@ -423,6 +423,25 @@ class Physlr:
         return bx1 is not None and bx2 is not None and bx1 == bx2 and \
             header_prefix_match_r1.group(1) == header_prefix_match_r2.group(1)
 
+    @staticmethod
+    def remove_small_components(g, min_component_size):
+        "Remove comonents smaller than min_component_size"
+        if min_component_size < 2:
+            return
+        ncomponents, nvertices = 0, 0
+        vertices = set()
+        for component in nx.connected_components(g):
+            if len(component) < min_component_size:
+                vertices.update(component)
+                ncomponents += 1
+                nvertices += len(component)
+        g.remove_nodes_from(vertices)
+        print(
+            int(timeit.default_timer() - t0),
+            "Removed", nvertices, "vertices in", ncomponents, "components",
+            "with fewer than", min_component_size, "vertices in a component.",
+            file=sys.stderr)
+
     def physlr_filter(self):
         "Filter a graph."
         g = self.read_graph(self.args.FILES)
@@ -434,20 +453,7 @@ class Physlr:
                 int(timeit.default_timer() - t0),
                 "Removed", len(vertices), "vertices with", self.args.M, "or more molecules.",
                 file=sys.stderr)
-        if self.args.min_component_size > 0:
-            ncomponents, nvertices = 0, 0
-            vertices = set()
-            for component in nx.connected_components(g):
-                if len(component) < self.args.min_component_size:
-                    vertices.update(component)
-                    ncomponents += 1
-                    nvertices += len(component)
-            g.remove_nodes_from(vertices)
-            print(
-                int(timeit.default_timer() - t0),
-                "Removed", nvertices, "vertices in", ncomponents, "components",
-                "with fewer than", self.args.min_component_size, "vertices in a component.",
-                file=sys.stderr)
+        Physlr.remove_small_components(g, self.args.min_component_size)
         self.write_graph(g, sys.stdout, self.args.graph_format)
 
     def physlr_flesh_backbone(self):
@@ -1041,6 +1047,49 @@ class Physlr:
         print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
 
     @staticmethod
+    def write_subgraphs_stats(g, fout):
+        "Write statistics of the subgraphs."
+        print("Barcode\tNodes\tEdges\tDensity", file=fout)
+        for i in progress(g):
+            print(i, g[i][0], g[i][1], g[i][2], sep="\t", file=fout)
+
+    @staticmethod
+    def subgraph_stats(g, u):
+        "Extract the statistics of the vertex-induced subgraph with the vertex being u."
+        sub_graph = g.subgraph(g.neighbors(u))
+        nodes_count = sub_graph.number_of_nodes()
+        edges_count = sub_graph.number_of_edges()
+        if nodes_count < 2:
+            return u, [nodes_count, edges_count, 0.0]
+        return u, (nodes_count, edges_count, (edges_count*2.0/(nodes_count*(nodes_count-1))))
+
+    @staticmethod
+    def subgraph_stats_process(u):
+        """
+        Extract the statistics of the subgraph of neighbours of this vertex.
+        The graph is passed in the class variable Physlr.graph.
+        """
+        return Physlr.subgraph_stats(Physlr.graph, u)
+
+    def physlr_subgraphs_stats(self):
+        "Retrieve subgraphs' stats."
+        gin = self.read_graph(self.args.FILES)
+        Physlr.filter_edges(gin, self.args.n)
+        print(
+            int(timeit.default_timer() - t0),
+            "Computing statistics of the subgraphs...", file=sys.stderr)
+        if self.args.threads == 1:
+            stats = dict(self.subgraph_stats(gin, u) for u in progress(gin))
+        else:
+            Physlr.graph = gin
+            with multiprocessing.Pool(self.args.threads) as pool:
+                stats = dict(pool.map(
+                    self.subgraph_stats_process, progress(gin), chunksize=100))
+            Physlr.graph = None
+        print(int(timeit.default_timer() - t0), "Extracted subgraphs' statistics.", file=sys.stderr)
+        self.write_subgraphs_stats(stats, sys.stdout)
+
+    @staticmethod
     def index_minimizers_in_backbones(backbones, bxtomxs):
         "Index the positions of the minimizers in the backbones."
         mxtopos = {}
@@ -1191,6 +1240,50 @@ class Physlr:
             int(timeit.default_timer() - t0),
             "Mapped", num_mapped, "sequences of", len(query_mxs),
             f"({round(100 * num_mapped / len(query_mxs), 2)}%)", file=sys.stderr)
+
+    def physlr_annotate_graph(self):
+        """
+        Annotate a graph with a BED file of mappings.
+        Usage: physlr annotate-graph GRAPH BED... >ANNOTATED-GRAPHVIZ
+        """
+
+        if len(self.args.FILES) < 2:
+            exit("physlr bed-to-gv: error: at least two file arguments are required")
+        graph_filenames = [self.args.FILES[0]]
+        bed_filenames = self.args.FILES[1:]
+
+        g = self.read_graph(graph_filenames)
+        backbones = Physlr.determine_backbones(g)
+        Physlr.remove_small_components(g, self.args.min_component_size)
+
+        # Associate vertices with mapped query names.
+        utomapping = {}
+        for tname, tstart, _, qname, score, _ in \
+                progress(Physlr.read_bed(bed_filenames)):
+            if score < self.args.n:
+                continue
+            tname = int(tname)
+            tstart = int(tstart)
+            u = backbones[tname][tstart]
+            utomapping[u] = (tname, tstart, qname)
+
+        # Determine the maximum reference name (must be an integer).
+        max_qname = max(int(qname) for _, _, qname in utomapping.values())
+
+        # Output the annotated graph in GraphViz format.
+        print("strict graph {\nnode [style=filled width=1 height=1]\nedge [color=lightgrey]")
+        for u, prop in g.nodes.items():
+            if u in utomapping:
+                tname, tstart, qname = utomapping[u]
+                hue = int(qname) / max_qname
+                print(f'"{u}" [label="{tname}_{tstart}" color="{hue},1,1"]')
+            else:
+                print(f'"{u}"')
+        for e, prop in g.edges.items():
+            u, v = sorted(e)
+            print(f'"{u}" -- "{v}" [label={prop["n"]}]')
+        print("}")
+        print(int(timeit.default_timer() - t0), "Wrote graph", file=sys.stderr)
 
     def physlr_bed_to_path(self):
         """
