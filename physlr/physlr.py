@@ -16,7 +16,9 @@ from collections import Counter
 
 
 import networkx as nx
+from networkx.algorithms import community as nxcommunity
 import tqdm
+import community as louvain
 
 from physlr.minimerize import minimerize
 from physlr.read_fasta import read_fasta
@@ -984,12 +986,70 @@ class Physlr:
         return "_" + str(random.choice(max_hits)), 0, 1
 
     @staticmethod
-    def determine_molecules(g, u):
-        "Assign the neighbours of this vertex to molecules."
+    def determine_molecules_biconnected_components(g, u):
+        "Separate bi-connected components."
         cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
         components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
         components.sort(key=len, reverse=True)
         return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+
+    @staticmethod
+    def determine_molecules_k_clique_communities(g, u):
+        "Apply k-clique community detection algorithm after extracting bi-connected components."
+        cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+        components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+        components.sort(key=len, reverse=True)
+        communities = []
+        for comp in components:
+            if len(comp) > 1:
+                communities += list(nxcommunity.k_clique_communities(g.subgraph(comp), 3))
+        return u, {v: i for i, vs in enumerate(communities) if len(vs) > 1 for v in vs}
+
+    @staticmethod
+    def determine_molecules_louvain(g, u):
+        "Apply louvain community detection algorithm after extracting bi-connected components."
+        cut_vertices = set(nx.articulation_points(g.subgraph(g.neighbors(u))))
+        components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)) - cut_vertices)))
+        components.sort(key=len, reverse=True)
+        communities = []
+        for comp in components:
+            if len(comp) > 1:
+                partition = louvain.best_partition(g.subgraph(comp))
+                for com in set(partition.values()):
+                    list_nodes = [nodes for nodes in partition.keys() if partition[nodes] == com]
+                    if len(list_nodes) > 1:
+                        communities.append(list_nodes)
+        return u, {v: i for i, vs in enumerate(communities) if len(vs) > 1 for v in vs}
+
+    @staticmethod
+    def determine_molecules_just_louvain(g, u):
+        "Apply louvain community detection without bi-connected separation."
+        sub_graph = g.subgraph(g.neighbors(u))
+        nodes_count = len(sub_graph)
+        if nodes_count == 0:  # or edges_count == 0:
+            components = list(nx.connected_components(g.subgraph(set(g.neighbors(u)))))
+            return u, {v: i for i, vs in enumerate(components) if len(vs) > 1 for v in vs}
+        partition = louvain.best_partition(sub_graph)
+        if not partition:
+            return u, {}
+        multinode_partitions_set = {}
+        for com in set(partition.values()):
+            list_nodes = [nodes for nodes in partition.keys() if partition[nodes] == com]
+            if len(list_nodes) > 1:
+                multinode_partition = {v: com for v in list_nodes}
+                multinode_partitions_set.update(multinode_partition)
+        return u, multinode_partitions_set
+
+    @staticmethod
+    def determine_molecules(g, u, strategy):
+        "Assign the neighbours of this vertex to molecules."
+        if strategy == 2:
+            return Physlr.determine_molecules_k_clique_communities(g, u)
+        if strategy == 3:
+            return Physlr.determine_molecules_louvain(g, u)
+
+        # strategy == 1 or none of the previous strategies
+        return Physlr.determine_molecules_biconnected_components(g, u)
 
     @staticmethod
     def determine_molecules_process(u):
@@ -997,25 +1057,43 @@ class Physlr:
         Assign the neighbours of this vertex to molecules.
         The graph is passed in the class variable Physlr.graph.
         """
-        return Physlr.determine_molecules(Physlr.graph, u)
+        return Physlr.determine_molecules(Physlr.graph, u, Physlr.args.strategy)
 
     def physlr_molecules(self):
         "Separate barcodes into molecules."
         gin = self.read_graph(self.args.FILES)
         Physlr.filter_edges(gin, self.args.n)
+        strategy_switcher = {
+            1: "\n\tStrategy: "
+               "Bi-connected components separation",
+            2: "\n\tStrategy: "
+               "K-clique community detection (after separating bi-connected components)",
+            3: "\n\tStrategy: "
+               "Louvain community detection (after separating bi-connected components)"
+        }
         print(
             int(timeit.default_timer() - t0),
-            "Separating barcodes into molecules", file=sys.stderr)
+            "Separating barcodes into molecules",
+            strategy_switcher.get(self.args.strategy,
+                                  "\033[93m"+"\n\tWarning:"
+                                             " Wrong input argument: --separation-strategy!"
+                                  "\n\t- Set to default strategy:"
+                                  " Bi-connected components separation."
+                                  "\033[0m"),
+            file=sys.stderr)
 
-        # Parition the neighbouring vertices of each barcode into molecules.
+        # Partition the neighbouring vertices of each barcode into molecules.
         if self.args.threads == 1:
-            molecules = dict(self.determine_molecules(gin, u) for u in progress(gin))
+            molecules = dict(
+                self.determine_molecules(gin, u, self.args.strategy) for u in progress(gin))
         else:
             Physlr.graph = gin
+            Physlr.args = self.args
             with multiprocessing.Pool(self.args.threads) as pool:
                 molecules = dict(pool.map(
                     self.determine_molecules_process, progress(gin), chunksize=100))
             Physlr.graph = None
+            Physlr.args = None
         print(int(timeit.default_timer() - t0), "Identified molecules", file=sys.stderr)
 
         # Add vertices.
@@ -1241,6 +1319,69 @@ class Physlr:
             "Mapped", num_mapped, "sequences of", len(query_mxs),
             f"({round(100 * num_mapped / len(query_mxs), 2)}%)", file=sys.stderr)
 
+    def physlr_map_paf(self):
+        """
+        Map sequences to a physical map and output a PAF file.
+        Usage: physlr map TGRAPH.tsv TMARKERS.tsv QMARKERS.tsv... >MAP.paf
+        """
+
+        if len(self.args.FILES) < 3:
+            exit("physlr map: error: at least three file arguments are required")
+        graph_filenames = [self.args.FILES[0]]
+        target_filenames = [self.args.FILES[1]]
+        query_filenames = self.args.FILES[2:]
+
+        g = self.read_graph(graph_filenames)
+        bxtomxs = self.read_minimizers(target_filenames)
+        query_mxs = bxtomxs if target_filenames == query_filenames else \
+            self.read_minimizers_list(query_filenames)
+
+        # Index the positions of the minimizers in the backbone.
+        backbones = Physlr.determine_backbones(g)
+        mxtopos = Physlr.index_minimizers_in_backbones(backbones, bxtomxs)
+
+        # Map the query sequences to the physical map.
+        num_mapped = 0
+        for qid, mxs in progress(query_mxs.items()):
+            # Map each target position to a query position.
+            tidpos_to_qpos = {}
+            for qpos, mx in enumerate(mxs):
+                for tidpos in mxtopos.get(mx, ()):
+                    tidpos_to_qpos.setdefault(tidpos, []).append(qpos)
+            for tidpos, qpos in tidpos_to_qpos.items():
+                q0, q1, q2, q3, q4 = quantile([0, 0.25, 0.5, 0.75, 1], qpos)
+                low_whisker = max(q0, int(q1 - self.args.coef * (q3 - q1)))
+                high_whisker = min(q4, int(q3 + self.args.coef * (q3 - q1)))
+                tidpos_to_qpos[tidpos] = (low_whisker, q2, high_whisker)
+
+            # Count the number of minimizers mapped to each target position.
+            tidpos_to_n = Counter(pos for mx in mxs for pos in mxtopos.get(mx, ()))
+
+            mapped = False
+            for (tid, tpos), score in tidpos_to_n.items():
+                if score >= self.args.n:
+                    mapped = True
+                    # The qpos tuple is (low_whisker, median, high_whisker).
+                    qmedian_before = tidpos_to_qpos.get((tid, tpos - 1), (None, None, None))[1]
+                    qstart, qmedian, qend = tidpos_to_qpos[tid, tpos]
+                    qmedian_after = tidpos_to_qpos.get((tid, tpos + 1), (None, None, None))[1]
+                    orientation = Physlr.determine_orientation(
+                        qmedian_before, qmedian, qmedian_after)
+                    qlength = len(mxs)
+                    tlength = len(backbones[tid])
+                    mapq = int(100 * score / (qend - qstart))
+                    print(
+                        qid, qlength, qstart, qend,
+                        orientation,
+                        tid, tlength, tpos, tpos + 1,
+                        score, qend - qstart, mapq, sep="\t")
+            if mapped:
+                num_mapped += 1
+        print(
+            int(timeit.default_timer() - t0),
+            "Mapped", num_mapped, "sequences of", len(query_mxs),
+            f"({round(100 * num_mapped / len(query_mxs), 2)}%)", file=sys.stderr)
+
     def physlr_annotate_graph(self):
         """
         Annotate a graph with a BED file of mappings.
@@ -1446,6 +1587,9 @@ class Physlr:
         for filename in self.args.FILES:
             paths = self.read_paths([filename])
             xs = [len(path) for path in paths if len(path) >= self.args.min_component_size]
+            if not xs:
+                print(f"0\t0\t0\t0\t0\t0\t0\t{filename}")
+                continue
             xs.sort(reverse=True)
             ng25 = Physlr.compute_ngxx(xs, self.args.g, 0.25)
             ng50 = Physlr.compute_ngxx(xs, self.args.g, 0.50)
@@ -1466,6 +1610,9 @@ class Physlr:
         argparser.add_argument(
             "-w", "--window", action="store", dest="w", type=int,
             help="number of k-mers in a window of size k + w - 1 bp")
+        argparser.add_argument(
+            "--separation-strategy", action="store", dest="strategy", type=int, default=1,
+            help="strategy id, for barcode to molecule separation [1]")
         argparser.add_argument(
             "--coef", action="store", dest="coef", type=float, default=1.5,
             help="ignore minimizers that occur in Q3+c*(Q3-Q1) or more barcodes [0]")
