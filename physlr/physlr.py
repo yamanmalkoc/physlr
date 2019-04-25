@@ -431,6 +431,69 @@ class Physlr:
         return backbones
 
     @staticmethod
+    def wrap_up_messages_and_pass(mst, messages, sender, receiver):
+        """Wrap all incoming messages to sender except the one from receiver;
+        and set (pass) the message from sender to receiver."""
+        neighbors_to_wrap_up = list(set(mst.neighbors(sender)) - {receiver})
+        if not neighbors_to_wrap_up:
+            messages[(receiver, sender)] = 1
+        messages[(receiver, sender)] = 1 + sum([messages[(sender, neighbor)] for neighbor in neighbors_to_wrap_up])
+
+    @staticmethod
+    def determine_reachability_of_tree_by_message_passing(mst):
+        dfs = list(nx.dfs_edges(mst))
+        stack = [dfs[0][0]]
+        messages = dict()
+        # Gather
+        for edge in dfs:
+            while stack[-1] != edge[0]:
+                Physlr.wrap_up_messages_and_pass(mst, messages, stack.pop(), stack[-1])
+            stack.append(edge[1])
+        while len(stack) != 1:
+            Physlr.wrap_up_messages_and_pass(mst, messages, stack.pop(), stack[-1])
+        # Distribute
+        for edge in dfs:
+            Physlr.wrap_up_messages_and_pass(mst, messages, edge[0], edge[1])
+        return messages
+
+    @staticmethod
+    def prune_branches_of_trees(g, messages):
+
+    @staticmethod
+    def determine_pruned_backbones_of_trees(g, branch_size=200):
+        """"Determine the backbones of the maximum spanning trees
+        and remove branches smaller than branch_size."""
+        paths = []
+        for component in nx.connected_components(g):
+            gcomponent = g.subgraph(component)
+            messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
+            pruned_gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages)
+            u, v, _ = Physlr.diameter_of_tree(gcomponent, weight="n")
+            path = nx.shortest_path(gcomponent, u, v, weight="n")
+            paths.append(path)
+        paths.sort(key=len, reverse=True)
+        return paths
+
+    @staticmethod
+    def determine_pruned_backbones(g, branch_size=100):
+        """"Determine the backbones of the graph
+        and remove branches smaller than branch_size."""
+        g = g.copy()
+        backbones = []
+        while not nx.is_empty(g):
+            gmst = nx.maximum_spanning_tree(g, weight="n")
+            paths = Physlr.determine_pruned_backbones_of_trees(gmst)
+            backbones.extend(paths)
+            vertices = [u for path in paths for u in path]
+            neighbors = [v for u in vertices for v in g.neighbors(u)]
+            g.remove_nodes_from(vertices)
+            g.remove_nodes_from(neighbors)
+            Physlr.remove_singletons(g)
+        backbones.sort(key=len, reverse=True)
+        print(int(timeit.default_timer() - t0), "Determined the backbone paths", file=sys.stderr)
+        return backbones
+
+    @staticmethod
     def print_flesh_path(backbone, backbone_insertions):
         "Print out the backbone path with 'flesh' barcodes added"
         for i, mol in enumerate(backbone):
