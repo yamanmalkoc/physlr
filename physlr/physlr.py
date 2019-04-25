@@ -458,11 +458,16 @@ class Physlr:
 
     @staticmethod
     def prune_branches_of_trees(g, messages):
+        """"Determine the backbones of the maximum spanning trees
+                and remove branches smaller than branch_size."""
+        for node in list(g.nodes):
+            node_edges = [(node, neighbor) for neighbor in g.neighbors(node)]
+
 
     @staticmethod
     def determine_pruned_backbones_of_trees(g, branch_size=200):
         """"Determine the backbones of the maximum spanning trees
-        and remove branches smaller than branch_size."""
+                and remove branches smaller than branch_size."""
         paths = []
         for component in nx.connected_components(g):
             gcomponent = g.subgraph(component)
