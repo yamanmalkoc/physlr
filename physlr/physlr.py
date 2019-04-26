@@ -911,7 +911,7 @@ class Physlr:
         g = self.read_graph(self.args.FILES)
         gmst = nx.algorithms.tree.mst.maximum_spanning_tree(g, weight="n")
         pruned_gmst = nx.Graph()
-        for component in nx.connected_components(gmst):
+        for component in progress(nx.connected_components(gmst)):
             gcomponent = gmst.subgraph(component)
             messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
             gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages)
