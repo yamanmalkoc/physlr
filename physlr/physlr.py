@@ -432,7 +432,7 @@ class Physlr:
 
     @staticmethod
     def wrap_up_messages_and_pass(mst, messages, sender, receiver):
-        """Wrap all incoming messages to sender except the one from receiver;
+        """Wrap up all incoming messages to this node (sender) except the one from receiver;
         and set (pass) the message from sender to receiver."""
         neighbors_to_wrap_up = list(set(mst.neighbors(sender)) - {receiver})
         if not neighbors_to_wrap_up:
@@ -441,6 +441,8 @@ class Physlr:
 
     @staticmethod
     def determine_reachability_of_tree_by_message_passing(mst):
+        """Using message passing, determine for each edge of each vertex
+        the number of vertices of the tree reachable from that vertex through that edge."""
         dfs = list(nx.dfs_edges(mst))
         stack = [dfs[0][0]]
         messages = dict()
@@ -456,18 +458,16 @@ class Physlr:
             Physlr.wrap_up_messages_and_pass(mst, messages, edge[0], edge[1])
         return messages
 
-    @staticmethod
-    def prune_the_branch(targets):
 
     @staticmethod
-    def prune_branches_of_tree(g, messages, pruning_threshold=20):
+    def prune_branches_of_tree(g, messages, pruning_threshold):
         """"Determine the backbones of the maximum spanning trees
                 and remove branches smaller than branch_size."""
         g = g.copy()
         list_of_edges_for_pruning = [(node, neighbor)
                                      for node in list(g.nodes)
                                      for neighbor in g.neighbors(node)
-                                     if messages[(node, neighbor)] < 2]
+                                     if messages[(node, neighbor)] < pruning_threshold]
         for edge in list_of_edges_for_pruning:
             stack = [edge[1]]
             while stack:
@@ -479,14 +479,14 @@ class Physlr:
         return g
 
     @staticmethod
-    def determine_pruned_backbones_of_trees(g, branch_size=200):
+    def determine_pruned_backbones_of_trees(g, pruning_threshold):
         """"Determine the backbones of the maximum spanning trees
                 and remove branches smaller than branch_size."""
         paths = []
         for component in nx.connected_components(g):
             gcomponent = g.subgraph(component)
             messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
-            pruned_gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages)
+            gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages, pruning_threshold)
             u, v, _ = Physlr.diameter_of_tree(gcomponent, weight="n")
             path = nx.shortest_path(gcomponent, u, v, weight="n")
             paths.append(path)
@@ -494,14 +494,14 @@ class Physlr:
         return paths
 
     @staticmethod
-    def determine_pruned_backbones(g, branch_size=100):
+    def determine_pruned_backbones(g, pruning_threshold=100):
         """"Determine the backbones of the graph
         and remove branches smaller than branch_size."""
         g = g.copy()
         backbones = []
         while not nx.is_empty(g):
             gmst = nx.maximum_spanning_tree(g, weight="n")
-            paths = Physlr.determine_pruned_backbones_of_trees(gmst)
+            paths = Physlr.determine_pruned_backbones_of_trees(gmst, pruning_threshold)
             backbones.extend(paths)
             vertices = [u for path in paths for u in path]
             neighbors = [v for u in vertices for v in g.neighbors(u)]
@@ -907,6 +907,13 @@ class Physlr:
         g = self.read_graph(self.args.FILES)
         gmst = nx.algorithms.tree.mst.maximum_spanning_tree(g, weight="n")
         self.write_graph(gmst, sys.stdout, self.args.graph_format)
+
+    def physlr_pruned_backbone(self):
+        "Determine the backbone path of the graph."
+        g = self.read_graph(self.args.FILES)
+        backbones = self.determine_pruned_backbones(g)
+        for backbone in backbones:
+            print(*backbone)
 
     def physlr_backbone(self):
         "Determine the backbone path of the graph."
