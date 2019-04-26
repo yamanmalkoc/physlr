@@ -902,6 +902,19 @@ class Physlr:
             print(u, prop["n"], g.degree(u), sep="\t")
         print(int(timeit.default_timer() - t0), "Wrote degrees of vertices", file=sys.stderr)
 
+    def physlr_pruned_mst(self):
+        """Determine the maximum spanning tree pruned for small branches."""
+        g = self.read_graph(self.args.FILES)
+        gmst = nx.algorithms.tree.mst.maximum_spanning_tree(g, weight="n")
+        pruned_gmst = nx.Graph()
+        for component in nx.connected_components(gmst):
+            gcomponent = gmst.subgraph(component)
+            messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
+            gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages)
+            pruned_gmst.add_edges_from(gcomponent.edges())
+            pruned_gmst.add_nodes_from(gcomponent.nodes())
+        self.write_graph(pruned_gmst, sys.stdout, self.args.graph_format)
+
     def physlr_mst(self):
         "Determine the maximum spanning tree."
         g = self.read_graph(self.args.FILES)
