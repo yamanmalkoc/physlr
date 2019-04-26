@@ -460,7 +460,7 @@ class Physlr:
 
 
     @staticmethod
-    def prune_branches_of_tree(g, messages, pruning_threshold):
+    def prune_branches_of_tree(g, messages, pruning_threshold=50):
         """"Determine the backbones of the maximum spanning trees
                 and remove branches smaller than branch_size."""
         g = g.copy()
@@ -468,6 +468,10 @@ class Physlr:
                                      for node in list(g.nodes)
                                      for neighbor in g.neighbors(node)
                                      if messages[(node, neighbor)] < pruning_threshold]
+        list_of_edges_for_pruning = [(i, j)
+                                     for i, j in list_of_edges_for_pruning
+                                     if i not in [k
+                                                  for t, k in list_of_edges_for_pruning]]
         for edge in list_of_edges_for_pruning:
             stack = [edge[1]]
             while stack:
