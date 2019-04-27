@@ -444,6 +444,8 @@ class Physlr:
         """Using message passing, determine for each edge of each vertex
         the number of vertices of the tree reachable from that vertex through that edge."""
         dfs = list(nx.dfs_edges(mst))
+        if not dfs:
+            return dict()
         stack = [dfs[0][0]]
         messages = dict()
         # Gather
@@ -458,54 +460,64 @@ class Physlr:
             Physlr.wrap_up_messages_and_pass(mst, messages, edge[0], edge[1])
         return messages
 
-
     @staticmethod
-    def prune_branches_of_tree(g, messages, pruning_threshold=50):
+    def prune_branches_of_tree(gmst, g, messages, pruning_threshold=50):
         """"Determine the backbones of the maximum spanning trees
                 and remove branches smaller than branch_size."""
         g = g.copy()
-        list_of_edges_for_pruning = [(node, neighbor)
-                                     for node in list(g.nodes)
-                                     for neighbor in g.neighbors(node)
-                                     if messages[(node, neighbor)] < pruning_threshold]
-        list_of_edges_for_pruning = [(i, j)
-                                     for i, j in list_of_edges_for_pruning
-                                     if i not in [k
-                                                  for t, k in list_of_edges_for_pruning]]
-        for edge in list_of_edges_for_pruning:
-            stack = [edge[1]]
-            while stack:
-                node_to_delete = stack.pop()
-                for new_node in g.neighbors(node_to_delete):
-                    if new_node != edge[0]:
-                        stack.append(new_node)
-                g.remove_node(node_to_delete)
-        return g
+        set_of_nodes_for_pruning = {neighbor
+                                    for node in list(g.nodes)
+                                    for neighbor in g.neighbors(node)
+                                    if messages[(node, neighbor)] < pruning_threshold}
+        for node_to_remove in set_of_nodes_for_pruning:
+            gmst.remove_node(node_to_remove)
+        return gmst
 
     @staticmethod
-    def determine_pruned_backbones_of_trees(g, pruning_threshold):
+    def detect_and_cut_junctions_of_tree(gcomponent, messages, junction_threshold):
+        """"
+        detect the junctions in the tree, and split the tree from those points.
+        """
+        gcomponent = gcomponent.copy()
+        set_of_all_junctions = {node
+                                for node in list(gcomponent.nodes)
+                                if gcomponent.degree(node) > 2}
+        nodes_to_remove = []
+        for candidate in set_of_all_junctions:
+            candidate_messages = [messages[(candidate, e)] for e in gcomponent.neighbors(candidate)]
+            candidate_messages.sort()
+            if candidate_messages[-3] > junction_threshold:
+                nodes_to_remove.append(candidate)
+        for node_to_remove in nodes_to_remove:
+            gcomponent.remove_node(node_to_remove)
+        return gcomponent
+
+    @staticmethod
+    def determine_safer_backbones_of_trees(g, junction_threshold):
         """"Determine the backbones of the maximum spanning trees
                 and remove branches smaller than branch_size."""
         paths = []
         for component in nx.connected_components(g):
             gcomponent = g.subgraph(component)
             messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
-            gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages, pruning_threshold)
-            u, v, _ = Physlr.diameter_of_tree(gcomponent, weight="n")
-            path = nx.shortest_path(gcomponent, u, v, weight="n")
-            paths.append(path)
+            gcomponents = Physlr.detect_and_cut_junctions_of_tree(gcomponent, messages, junction_threshold)
+            for component2 in nx.connected_components(gcomponents):
+                gcomponent2 = g.subgraph(component2)
+                u, v, _ = Physlr.diameter_of_tree(gcomponent2, weight="n")
+                path = nx.shortest_path(gcomponent2, u, v, weight="n")
+                paths.append(path)
         paths.sort(key=len, reverse=True)
         return paths
 
     @staticmethod
-    def determine_pruned_backbones(g, pruning_threshold=100):
+    def determine_safer_backbones(g, junction_threshold=200):
         """"Determine the backbones of the graph
-        and remove branches smaller than branch_size."""
+        with ambiguous nodes being removed """
         g = g.copy()
         backbones = []
         while not nx.is_empty(g):
             gmst = nx.maximum_spanning_tree(g, weight="n")
-            paths = Physlr.determine_pruned_backbones_of_trees(gmst, pruning_threshold)
+            paths = Physlr.determine_safer_backbones_of_trees(gmst, junction_threshold)
             backbones.extend(paths)
             vertices = [u for path in paths for u in path]
             neighbors = [v for u in vertices for v in g.neighbors(u)]
@@ -910,14 +922,16 @@ class Physlr:
         """Determine the maximum spanning tree pruned for small branches."""
         g = self.read_graph(self.args.FILES)
         gmst = nx.algorithms.tree.mst.maximum_spanning_tree(g, weight="n")
-        pruned_gmst = nx.Graph()
+        gmst_copy = gmst.copy()
+        # pruned_gmst = nx.Graph()
         for component in progress(nx.connected_components(gmst)):
             gcomponent = gmst.subgraph(component)
-            messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
-            gcomponent = Physlr.prune_branches_of_tree(gcomponent, messages)
-            pruned_gmst.add_edges_from(gcomponent.edges())
-            pruned_gmst.add_nodes_from(gcomponent.nodes())
-        self.write_graph(pruned_gmst, sys.stdout, self.args.graph_format)
+            if nx.number_of_edges(gcomponent) > 0:
+                messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
+                gmst_copy = Physlr.prune_branches_of_tree(gmst_copy, gcomponent, messages)
+                # pruned_gmst.add_edges_from(gcomponent.edges())
+                # pruned_gmst.add_nodes_from(gcomponent.nodes())
+        self.write_graph(gmst_copy, sys.stdout, self.args.graph_format)
 
     def physlr_mst(self):
         "Determine the maximum spanning tree."
