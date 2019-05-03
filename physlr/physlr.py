@@ -440,7 +440,7 @@ class Physlr:
         messages[(receiver, sender)] = 1 + sum([messages[(sender, neighbor)] for neighbor in neighbors_to_wrap_up])
 
     @staticmethod
-    def determine_reachability_of_tree_by_message_passing(mst):
+    def determine_reachability_by_message_passing(mst):
         """Using message passing, determine for each edge of each vertex
         the number of vertices of the tree reachable from that vertex through that edge."""
         dfs = list(nx.dfs_edges(mst))
@@ -484,7 +484,8 @@ class Physlr:
                                 if gcomponent.degree(node) > 2}
         nodes_to_remove = []
         for candidate in set_of_all_junctions:
-            candidate_messages = [messages[(candidate, e)] for e in gcomponent.neighbors(candidate)]
+            candidate_messages = [messages[(candidate, neighbor)]
+                                  for neighbor in gcomponent.neighbors(candidate)]
             candidate_messages.sort()
             if candidate_messages[-3] > junction_threshold:
                 nodes_to_remove.append(candidate)
@@ -494,13 +495,16 @@ class Physlr:
 
     @staticmethod
     def determine_safer_backbones_of_trees(g, junction_threshold):
-        """"Determine the backbones of the maximum spanning trees
-                and remove branches smaller than branch_size."""
+        """"
+        Determine the backbones of the maximum spanning trees
+        and remove junctions over junction threshold.
+        """
         paths = []
         for component in nx.connected_components(g):
             gcomponent = g.subgraph(component)
-            messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
-            gcomponents = Physlr.detect_and_cut_junctions_of_tree(gcomponent, messages, junction_threshold)
+            messages = Physlr.determine_reachability_by_message_passing(gcomponent)
+            gcomponents = \
+                Physlr.detect_and_cut_junctions_of_tree(gcomponent, messages, junction_threshold)
             for component2 in nx.connected_components(gcomponents):
                 gcomponent2 = g.subgraph(component2)
                 u, v, _ = Physlr.diameter_of_tree(gcomponent2, weight="n")
@@ -510,9 +514,10 @@ class Physlr:
         return paths
 
     @staticmethod
-    def determine_safer_backbones(g, junction_threshold=200):
-        """"Determine the backbones of the graph
-        with ambiguous nodes being removed """
+    def determine_safer_backbones(g, junction_threshold=100):
+        """"
+        Determine the backbones of the graph with ambiguous nodes being removed
+        """
         g = g.copy()
         backbones = []
         while not nx.is_empty(g):
@@ -923,14 +928,11 @@ class Physlr:
         g = self.read_graph(self.args.FILES)
         gmst = nx.algorithms.tree.mst.maximum_spanning_tree(g, weight="n")
         gmst_copy = gmst.copy()
-        # pruned_gmst = nx.Graph()
-        for component in progress(nx.connected_components(gmst)):
+        for component in nx.connected_components(gmst):
             gcomponent = gmst.subgraph(component)
             if nx.number_of_edges(gcomponent) > 0:
-                messages = Physlr.determine_reachability_of_tree_by_message_passing(gcomponent)
+                messages = Physlr.determine_reachability_by_message_passing(gcomponent)
                 gmst_copy = Physlr.prune_branches_of_tree(gmst_copy, gcomponent, messages)
-                # pruned_gmst.add_edges_from(gcomponent.edges())
-                # pruned_gmst.add_nodes_from(gcomponent.nodes())
         self.write_graph(gmst_copy, sys.stdout, self.args.graph_format)
 
     def physlr_mst(self):
@@ -939,10 +941,10 @@ class Physlr:
         gmst = nx.algorithms.tree.mst.maximum_spanning_tree(g, weight="n")
         self.write_graph(gmst, sys.stdout, self.args.graph_format)
 
-    def physlr_pruned_backbone(self):
-        "Determine the backbone path of the graph."
+    def physlr_safer_backbone(self):
+        "Determine the backbone path of the graph with junctions being removed."
         g = self.read_graph(self.args.FILES)
-        backbones = self.determine_pruned_backbones(g)
+        backbones = self.determine_safer_backbones(g)
         for backbone in backbones:
             print(*backbone)
 
@@ -958,6 +960,16 @@ class Physlr:
         g = self.read_graph(self.args.FILES)
         Physlr.remove_singletons(g)
         backbones = self.determine_backbones(g)
+        backbone = (u for path in backbones for u in path)
+        subgraph = self.sort_vertices(g.subgraph(backbone))
+        self.write_graph(subgraph, sys.stdout, self.args.graph_format)
+        print(int(timeit.default_timer() - t0), "Output the backbone subgraph", file=sys.stderr)
+
+    def physlr_safer_backbone_graph(self):
+        "Determine the backbone-induced subgraph with junctions being removed."
+        g = self.read_graph(self.args.FILES)
+        Physlr.remove_singletons(g)
+        backbones = self.determine_safer_backbones(g)
         backbone = (u for path in backbones for u in path)
         subgraph = self.sort_vertices(g.subgraph(backbone))
         self.write_graph(subgraph, sys.stdout, self.args.graph_format)
