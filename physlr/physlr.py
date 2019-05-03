@@ -494,6 +494,24 @@ class Physlr:
         return gcomponent
 
     @staticmethod
+    def detect_junctions_of_tree(gcomponent, messages, junction_threshold):
+        """"
+        detect the junctions in the tree, and return.
+        """
+        gcomponent = gcomponent.copy()
+        set_of_all_junctions = {node
+                                for node in list(gcomponent.nodes)
+                                if gcomponent.degree(node) > 2}
+        nodes_to_remove = []
+        for candidate in set_of_all_junctions:
+            candidate_messages = [messages[(candidate, neighbor)]
+                                  for neighbor in gcomponent.neighbors(candidate)]
+            candidate_messages.sort()
+            if candidate_messages[-3] > junction_threshold:
+                nodes_to_remove.append(candidate)
+        return nodes_to_remove
+
+    @staticmethod
     def determine_safer_backbones_of_trees(g, junction_threshold):
         """"
         Determine the backbones of the maximum spanning trees
@@ -514,6 +532,21 @@ class Physlr:
         return paths
 
     @staticmethod
+    def determine_junctions_of_trees(g, junction_threshold):
+        """"
+        Determine the backbones of the maximum spanning trees
+        and remove junctions over junction threshold.
+        """
+        junctions = []
+        for component in nx.connected_components(g):
+            gcomponent = g.subgraph(component)
+            messages = Physlr.determine_reachability_by_message_passing(gcomponent)
+            new_junctions = \
+                Physlr.detect_junctions_of_tree(gcomponent, messages, junction_threshold)
+            junctions.append(new_junctions)
+        return junctions
+
+    @staticmethod
     def determine_safer_backbones(g, junction_threshold=100):
         """"
         Determine the backbones of the graph with ambiguous nodes being removed
@@ -532,6 +565,16 @@ class Physlr:
         backbones.sort(key=len, reverse=True)
         print(int(timeit.default_timer() - t0), "Determined the backbone paths", file=sys.stderr)
         return backbones
+
+    @staticmethod
+    def determine_junctions(g, junction_threshold=100):
+        """"
+        Determine the backbones of the graph with ambiguous nodes being removed
+        """
+        gmst = nx.maximum_spanning_tree(g, weight="n")
+        junctions = Physlr.determine_junctions_of_trees(gmst, junction_threshold)
+        print(int(timeit.default_timer() - t0), "Determined the Junctions", file=sys.stderr)
+        return junctions
 
     @staticmethod
     def print_flesh_path(backbone, backbone_insertions):
@@ -946,6 +989,13 @@ class Physlr:
         g = self.read_graph(self.args.FILES)
         backbones = self.determine_safer_backbones(g)
         for backbone in backbones:
+            print(*backbone)
+
+    def physlr_junctions(self):
+        "Determine the junction in the mst."
+        g = self.read_graph(self.args.FILES)
+        junctions = self.determine_junctions(g)
+        for junction in junctions:
             print(*backbone)
 
     def physlr_backbone(self):
