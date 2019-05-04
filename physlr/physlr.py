@@ -996,7 +996,7 @@ class Physlr:
         g = self.read_graph(self.args.FILES)
         junctions = self.determine_junctions(g)
         for junction in junctions:
-            print(*backbone)
+            print(junction, "\n")
 
     def physlr_backbone(self):
         "Determine the backbone path of the graph."
